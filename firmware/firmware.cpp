@@ -2,8 +2,8 @@
 
 #define BAUD_RATE   230400
 #define PIN_COUNT   28
-#define VERSION_STR "RTk.GPIO v2 10/04/2022\n"
-#define READY_STR   "RTk.GPIO v2 Ready\n"
+#define VERSION_STR "RTk.GPIO v2.1 2026-04-07\n"
+#define READY_STR   "RTk.GPIO v2.1 Ready\n"
 
 // pin number mapping
 static const PinName gpPinMap[] = {
@@ -100,7 +100,7 @@ static void dispatch_pin(uint8_t pin, uint8_t action) {
     if (pin >= PIN_COUNT) {
         return;
     }
-    // fetch the IO object for this pin or create in demand
+    // fetch the IO object for this pin or create on demand
     DigitalInOut *io = gpio_get(pin);
     if (io) {
         // dispatch the operation
@@ -117,6 +117,8 @@ static void dispatch_pin(uint8_t pin, uint8_t action) {
         case '?':
             serialPort.putc('a' + pin);
             serialPort.putc( io->read() ? '1' : '0' );
+            serialPort.putc('\r');
+            serialPort.putc('\n');
             break;
         }
     }
@@ -134,7 +136,7 @@ static void inc_latched_pin(void) {
 static void reset() {
     // reset the latched pin
     latched_pin = 0;
-    // dispose of all GPIO pin
+    // dispose of all GPIO pins
     for (int i=0; i<PIN_COUNT; ++i) {
         gpio_dispose(i);
     }
@@ -150,7 +152,7 @@ static void state_spi_xfer_2(const char dat) {
     // get the spi object we need
     SPI *spi = spi_get();
     if (spi) {
-        // latch spi least significant bit
+        // latch spi least significant nibble
         const uint8_t d1 = hex_to_nibble(dat);
         spi_out |= d1 & 0x0f;
         // send byte over spi
@@ -164,9 +166,9 @@ static void state_spi_xfer_2(const char dat) {
 }
 
 // SPI transmit state 1
-// latch first byte then wait for the second state
+// latch first byte then wait for the second
 static void state_spi_xfer_1(const char dat) {
-    // latch spi most significant bit
+    // latch spi most significant nibble
     const uint8_t d0 = hex_to_nibble(dat);
     spi_out = d0 << 4;
     // set next state
@@ -203,6 +205,8 @@ static void state_default(const char dat) {
 static bool global_handler(const char dat) {
     // return version string
     if (dat == 'V') {
+        // FIX: reset state machine to prevent stale SPI state
+        state_handler = state_default;
         serialPort.puts(VERSION_STR);
         return true;
     }
@@ -234,8 +238,8 @@ int main() {
         }
         // note that in this design this is the only place that reads from
         // the serial port.  this is important to avoid lockups when waiting
-        // for data in nested code.  by reading in on place we can support
-        // a global hander that can perform resets consistently.
+        // for data in nested code.  by reading in one place we can support
+        // a global handler that can perform resets consistently.
         const uint8_t dat = serialPort.getc();
         // allow a global handler to deal with this first
         if (global_handler(dat)) {
